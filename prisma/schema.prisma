@@ -1,0 +1,113 @@
+// Prisma schema for Pegboard Flow.
+// Connection URLs live in prisma7.config.ts (CLI) and src/lib/prisma.ts (app
+// runtime via the pg driver adapter) — Prisma 7 no longer reads them from
+// this file. See https://pris.ly/d/config-datasource
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum CustomerType {
+  individual
+  organization
+}
+
+enum OrderStatus {
+  inquiry
+  confirmed
+  in_progress
+  ready
+  delivered
+  cancelled
+}
+
+enum OrderSource {
+  public_form
+  manual
+}
+
+// A logged-in shop operator. Seeded manually — there is no public
+// registration route for this table (see prisma/seed.ts in Phase 1).
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+}
+
+// Doubles as both "a contact the maker typed in after a Messenger chat"
+// (passwordHash null) and "a self-registered portal account" (passwordHash
+// set). Same table either way — see project brief for why.
+model Customer {
+  id            String   @id @default(cuid())
+  name          String
+  type          CustomerType @default(individual)
+  orgName       String?
+  contactHandle String?
+  email         String?  @unique
+  passwordHash  String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  orders        Order[]
+
+  @@index([type])
+}
+
+model Order {
+  id         String      @id @default(cuid())
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  status     OrderStatus @default(inquiry)
+  source     OrderSource @default(manual)
+  totalPrice Decimal     @default(0)
+  amountPaid Decimal     @default(0)
+  dueDate    DateTime?
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  items      OrderItem[]
+
+  // both used together on the main "what needs work today" list
+  @@index([status])
+  @@index([dueDate])
+}
+
+model OrderItem {
+  id                 String   @id @default(cuid())
+  orderId            String
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  description        String
+  quantity           Int      @default(1)
+  referencePhotoPath String? // Supabase Storage object key, not a local path
+  patternId          String?  @unique
+  pattern            Pattern? @relation(fields: [patternId], references: [id])
+}
+
+// The bead palette — user-editable, not seeded with anything permanent.
+model BeadColor {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?
+  hex       String
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+// cells is a flat, row-major array of BeadColor.id (or null for an empty
+// cell), length gridWidth * gridHeight. Never a rendered image — bead counts
+// are recomputed from this on demand.
+model Pattern {
+  id         String    @id @default(cuid())
+  gridWidth  Int
+  gridHeight Int
+  cells      Json
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  orderItem  OrderItem?
+}
